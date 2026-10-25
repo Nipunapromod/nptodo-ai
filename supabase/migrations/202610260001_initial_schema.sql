@@ -54,6 +54,430 @@ create table if not exists public.recurring_schedules (
   priority text not null default 'medium' check (priority in ('low', 'medium', 'high')),
   recurrence_rule jsonb not null,
   timezone text not null default 'Asia/Colombo',
+  local_time text not null default '07:00' check (local_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.recurring_schedules add column if not exists local_time text not null default '07:00' check (local_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]
+
+create table if not exists public.reminder_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  schedule_id uuid references public.recurring_schedules(id) on delete set null,
+  task_id uuid references public.tasks(id) on delete set null,
+  occurrence_key text not null,
+  scheduled_for timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0 check (attempts >= 0),
+  last_error text,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (user_id, occurrence_key)
+);
+create index if not exists reminder_deliveries_pending_idx on public.reminder_deliveries (scheduled_for) where status in ('pending', 'failed');
+
+create table if not exists public.subjects (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(trim(name)) between 1 and 100),
+  code text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, code)
+);
+
+create table if not exists public.lessons (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  title text not null check (char_length(trim(title)) between 1 and 180),
+  topic text not null default '',
+  status text not null default 'not_started' check (status in ('not_started', 'learning', 'practising', 'revised', 'mastered')),
+  sort_order integer not null default 0,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.study_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  studied_on date not null default current_date,
+  duration_minutes integer not null default 0 check (duration_minutes >= 0),
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.marks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  assessment_name text not null check (char_length(trim(assessment_name)) between 1 and 180),
+  score numeric(7,2) not null check (score >= 0),
+  max_score numeric(7,2) not null check (max_score > 0 and score <= max_score),
+  assessed_on date not null default current_date,
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+alter table public.tasks enable row level security;
+alter table public.recurring_schedules enable row level security;
+alter table public.reminder_deliveries enable row level security;
+alter table public.subjects enable row level security;
+alter table public.lessons enable row level security;
+alter table public.study_records enable row level security;
+alter table public.marks enable row level security;
+
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own" on public.profiles for select to authenticated using (id = (select auth.uid()));
+drop policy if exists "profiles_update_own" on public.profiles;
+create policy "profiles_update_own" on public.profiles for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+
+drop policy if exists "tasks_all_own" on public.tasks;
+create policy "tasks_all_own" on public.tasks for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "recurring_schedules_all_own" on public.recurring_schedules;
+create policy "recurring_schedules_all_own" on public.recurring_schedules for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "reminder_deliveries_select_own" on public.reminder_deliveries;
+create policy "reminder_deliveries_select_own" on public.reminder_deliveries for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "subjects_all_own" on public.subjects;
+create policy "subjects_all_own" on public.subjects for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "lessons_all_own" on public.lessons;
+create policy "lessons_all_own" on public.lessons for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "study_records_all_own" on public.study_records;
+create policy "study_records_all_own" on public.study_records for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "marks_all_own" on public.marks;
+create policy "marks_all_own" on public.marks for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.tasks to authenticated;
+grant select, insert, update, delete on public.recurring_schedules to authenticated;
+grant select on public.reminder_deliveries to authenticated;
+grant select, insert, update, delete on public.subjects to authenticated;
+grant select, insert, update, delete on public.lessons to authenticated;
+grant select, insert, update, delete on public.study_records to authenticated;
+grant select, insert, update, delete on public.marks to authenticated;
+
+-- Seed each new account with the three A/L subjects.
+create or replace function public.seed_default_subjects()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.subjects (user_id, name, code, sort_order)
+  values
+    (new.id, 'Combined Mathematics', 'combined-mathematics', 1),
+    (new.id, 'Physics', 'physics', 2),
+    (new.id, 'Chemistry', 'chemistry', 3)
+  on conflict (user_id, code) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists seed_subjects_after_profile on public.profiles;
+create trigger seed_subjects_after_profile
+after insert on public.profiles
+for each row execute procedure public.seed_default_subjects();
+),
+  next_run_at timestamptz not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists recurring_schedules_due_idx on public.recurring_schedules (next_run_at) where active = true;
+
+create table if not exists public.reminder_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  schedule_id uuid references public.recurring_schedules(id) on delete set null,
+  task_id uuid references public.tasks(id) on delete set null,
+  occurrence_key text not null,
+  scheduled_for timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0 check (attempts >= 0),
+  last_error text,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (user_id, occurrence_key)
+);
+create index if not exists reminder_deliveries_pending_idx on public.reminder_deliveries (scheduled_for) where status in ('pending', 'failed');
+
+create table if not exists public.subjects (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(trim(name)) between 1 and 100),
+  code text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, code)
+);
+
+create table if not exists public.lessons (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  title text not null check (char_length(trim(title)) between 1 and 180),
+  topic text not null default '',
+  status text not null default 'not_started' check (status in ('not_started', 'learning', 'practising', 'revised', 'mastered')),
+  sort_order integer not null default 0,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.study_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  studied_on date not null default current_date,
+  duration_minutes integer not null default 0 check (duration_minutes >= 0),
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.marks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  assessment_name text not null check (char_length(trim(assessment_name)) between 1 and 180),
+  score numeric(7,2) not null check (score >= 0),
+  max_score numeric(7,2) not null check (max_score > 0 and score <= max_score),
+  assessed_on date not null default current_date,
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+alter table public.tasks enable row level security;
+alter table public.recurring_schedules enable row level security;
+alter table public.reminder_deliveries enable row level security;
+alter table public.subjects enable row level security;
+alter table public.lessons enable row level security;
+alter table public.study_records enable row level security;
+alter table public.marks enable row level security;
+
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own" on public.profiles for select to authenticated using (id = (select auth.uid()));
+drop policy if exists "profiles_update_own" on public.profiles;
+create policy "profiles_update_own" on public.profiles for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+
+drop policy if exists "tasks_all_own" on public.tasks;
+create policy "tasks_all_own" on public.tasks for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "recurring_schedules_all_own" on public.recurring_schedules;
+create policy "recurring_schedules_all_own" on public.recurring_schedules for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "reminder_deliveries_select_own" on public.reminder_deliveries;
+create policy "reminder_deliveries_select_own" on public.reminder_deliveries for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "subjects_all_own" on public.subjects;
+create policy "subjects_all_own" on public.subjects for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "lessons_all_own" on public.lessons;
+create policy "lessons_all_own" on public.lessons for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "study_records_all_own" on public.study_records;
+create policy "study_records_all_own" on public.study_records for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "marks_all_own" on public.marks;
+create policy "marks_all_own" on public.marks for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.tasks to authenticated;
+grant select, insert, update, delete on public.recurring_schedules to authenticated;
+grant select on public.reminder_deliveries to authenticated;
+grant select, insert, update, delete on public.subjects to authenticated;
+grant select, insert, update, delete on public.lessons to authenticated;
+grant select, insert, update, delete on public.study_records to authenticated;
+grant select, insert, update, delete on public.marks to authenticated;
+
+-- Seed each new account with the three A/L subjects.
+create or replace function public.seed_default_subjects()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.subjects (user_id, name, code, sort_order)
+  values
+    (new.id, 'Combined Mathematics', 'combined-mathematics', 1),
+    (new.id, 'Physics', 'physics', 2),
+    (new.id, 'Chemistry', 'chemistry', 3)
+  on conflict (user_id, code) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists seed_subjects_after_profile on public.profiles;
+create trigger seed_subjects_after_profile
+after insert on public.profiles
+for each row execute procedure public.seed_default_subjects();
+);
+create index if not exists recurring_schedules_due_idx on public.recurring_schedules (next_run_at) where active = true;
+
+create table if not exists public.reminder_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  schedule_id uuid references public.recurring_schedules(id) on delete set null,
+  task_id uuid references public.tasks(id) on delete set null,
+  occurrence_key text not null,
+  scheduled_for timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0 check (attempts >= 0),
+  last_error text,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (user_id, occurrence_key)
+);
+create index if not exists reminder_deliveries_pending_idx on public.reminder_deliveries (scheduled_for) where status in ('pending', 'failed');
+
+create table if not exists public.subjects (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(trim(name)) between 1 and 100),
+  code text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, code)
+);
+
+create table if not exists public.lessons (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  title text not null check (char_length(trim(title)) between 1 and 180),
+  topic text not null default '',
+  status text not null default 'not_started' check (status in ('not_started', 'learning', 'practising', 'revised', 'mastered')),
+  sort_order integer not null default 0,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.study_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  studied_on date not null default current_date,
+  duration_minutes integer not null default 0 check (duration_minutes >= 0),
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.marks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  assessment_name text not null check (char_length(trim(assessment_name)) between 1 and 180),
+  score numeric(7,2) not null check (score >= 0),
+  max_score numeric(7,2) not null check (max_score > 0 and score <= max_score),
+  assessed_on date not null default current_date,
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+alter table public.tasks enable row level security;
+alter table public.recurring_schedules enable row level security;
+alter table public.reminder_deliveries enable row level security;
+alter table public.subjects enable row level security;
+alter table public.lessons enable row level security;
+alter table public.study_records enable row level security;
+alter table public.marks enable row level security;
+
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own" on public.profiles for select to authenticated using (id = (select auth.uid()));
+drop policy if exists "profiles_update_own" on public.profiles;
+create policy "profiles_update_own" on public.profiles for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+
+drop policy if exists "tasks_all_own" on public.tasks;
+create policy "tasks_all_own" on public.tasks for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "recurring_schedules_all_own" on public.recurring_schedules;
+create policy "recurring_schedules_all_own" on public.recurring_schedules for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "reminder_deliveries_select_own" on public.reminder_deliveries;
+create policy "reminder_deliveries_select_own" on public.reminder_deliveries for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "subjects_all_own" on public.subjects;
+create policy "subjects_all_own" on public.subjects for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "lessons_all_own" on public.lessons;
+create policy "lessons_all_own" on public.lessons for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "study_records_all_own" on public.study_records;
+create policy "study_records_all_own" on public.study_records for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+drop policy if exists "marks_all_own" on public.marks;
+create policy "marks_all_own" on public.marks for all to authenticated using (user_id = (select auth.uid())) with check (
+  user_id = (select auth.uid()) and exists (
+    select 1 from public.subjects s where s.id = subject_id and s.user_id = (select auth.uid())
+  )
+);
+
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.tasks to authenticated;
+grant select, insert, update, delete on public.recurring_schedules to authenticated;
+grant select on public.reminder_deliveries to authenticated;
+grant select, insert, update, delete on public.subjects to authenticated;
+grant select, insert, update, delete on public.lessons to authenticated;
+grant select, insert, update, delete on public.study_records to authenticated;
+grant select, insert, update, delete on public.marks to authenticated;
+
+-- Seed each new account with the three A/L subjects.
+create or replace function public.seed_default_subjects()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.subjects (user_id, name, code, sort_order)
+  values
+    (new.id, 'Combined Mathematics', 'combined-mathematics', 1),
+    (new.id, 'Physics', 'physics', 2),
+    (new.id, 'Chemistry', 'chemistry', 3)
+  on conflict (user_id, code) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists seed_subjects_after_profile on public.profiles;
+create trigger seed_subjects_after_profile
+after insert on public.profiles
+for each row execute procedure public.seed_default_subjects();
+),
   next_run_at timestamptz not null,
   active boolean not null default true,
   created_at timestamptz not null default now(),
