@@ -133,6 +133,17 @@ export function StudyClient() {
       {error && <p role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-400/5 p-3 text-xs leading-5 text-rose-200">{error}</p>}
       {subjects.length === 0 && <div className="mt-5 rounded-xl border border-white/10 p-4"><p className="text-sm text-[#dce4f8]">Your subject list is empty.</p><button disabled={busy} onClick={() => void seedSubjects()} className="accent-gradient mt-3 rounded-lg px-3 py-2 text-xs font-bold text-[#071018]">Add the three A/L subjects</button></div>}
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">{summary.map((subject) => <div key={subject.id} className="rounded-xl border border-white/[.07] bg-white/[.02] p-4"><p className="text-xs font-semibold text-[#e5ecff]">{subject.name}</p><div className="mt-3 flex items-end justify-between"><span className="text-2xl font-semibold text-[#f0f5ff]">{subject.percent}%</span><span className="text-[10px] text-[#8793b0]">{subject.completed}/{subject.total} revised/mastered</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-[#5ee7f7] to-[#a18bff]" style={{ width: `${subject.percent}%` }}/></div><p className="mt-2 text-[10px] text-[#8793b0]">{subject.markPercent === null ? "No marks recorded" : `Combined score ratio: ${subject.markPercent}%`}</p></div>)}</div>
+      <div className="mt-5 rounded-xl border border-white/[.07] bg-white/[.02] p-4">
+        <h2 className="text-xs font-semibold text-[#e5ecff]">Subject progress chart</h2>
+        <p className="mt-1 text-[10px] text-[#8793b0]">Percentage of lessons marked Revised or Mastered.</p>
+        <div className="mt-4 space-y-3">
+          {summary.map((subject) => <div key={subject.id} className="grid grid-cols-[minmax(0,145px)_minmax(0,1fr)_36px] items-center gap-3">
+            <span className="truncate text-[10px] text-[#aeb9d2]">{subject.name}</span>
+            <div className="h-3 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-[#5ee7f7] to-[#a18bff]" style={{ width: `${subject.percent}%` }}/></div>
+            <span className="text-right text-[10px] tabular-nums text-[#c6d1e9]">{subject.percent}%</span>
+          </div>)}
+        </div>
+      </div>
     </section>
     {subjects.length > 0 && <>
       <section className="glass-panel rounded-2xl p-5 sm:p-6"><div className="flex items-center gap-2"><BookOpenCheck size={17} className="text-[#7de4f1]"/><h2 className="text-sm font-semibold text-[#e8edfb]">Lessons and topics</h2></div><form onSubmit={addLesson} className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_220px_auto]"><input required maxLength={180} value={lessonTitle} onChange={(e) => setLessonTitle(e.target.value)} placeholder="Add a lesson or topic…" className="min-w-0 rounded-xl border border-white/10 bg-[#090e19]/70 px-3 py-3 text-sm text-white outline-none focus:border-[#5ee7f7]/40"/><select value={lessonSubject} onChange={(e) => setLessonSubject(e.target.value)} className="rounded-xl border border-white/10 bg-[#090e19]/70 px-3 py-3 text-sm text-white">{subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button disabled={busy} type="submit" className="accent-gradient inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-[#071018]"><Plus size={14}/>Add lesson</button></form>
