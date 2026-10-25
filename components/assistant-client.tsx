@@ -76,7 +76,7 @@ export function AssistantClient() {
           due_at: action.due_at,
         });
         if (insertError) throw insertError;
-        setSaved((old) => [...old, `task:${action.title}`]);
+        setSaved((old) => [...old, `create_task:${action.title}`]);
         setMessages((old) => [...old, { role: "assistant", text: `Saved task: “${action.title}”.` }]);
       } else {
         const { error: insertError } = await supabase.from("recurring_schedules").insert({
@@ -91,7 +91,7 @@ export function AssistantClient() {
           active: true,
         });
         if (insertError) throw insertError;
-        setSaved((old) => [...old, `schedule:${action.title}`]);
+        setSaved((old) => [...old, `recurring_schedule:${action.title}`]);
         setMessages((old) => [...old, { role: "assistant", text: `Saved recurring schedule: “${action.title}”. The reminder delivery engine still needs to be configured before notifications are sent automatically.` }]);
       }
     } catch (caught) {
