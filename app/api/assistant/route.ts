@@ -66,9 +66,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Sign in before using the AI assistant." }, { status: 401 });
     }
 
-    const apiKey = process.env.AI_GATEWAY_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "AI is not configured yet. Add AI_GATEWAY_API_KEY in Vercel project environment variables." }, { status: 503 });
+      return NextResponse.json({ error: "OpenAI is not configured yet. Add OPENAI_API_KEY in Vercel project environment variables." }, { status: 503 });
     }
 
     let localNow: string;
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "That time zone is not valid. Use a standard IANA time zone such as Asia/Colombo." }, { status: 400 });
     }
 
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       },
       signal: AbortSignal.timeout(25000),
       body: JSON.stringify({
-        model: process.env.AI_GATEWAY_MODEL || "openai/gpt-4.1-mini",
+        model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -100,7 +100,19 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      return NextResponse.json({ error: "The AI provider could not complete the request. Check the provider key, model availability and usage limits." }, { status: 502 });
+      if (response.status === 401) {
+        return NextResponse.json({ error: "OpenAI rejected the API key. Check OPENAI_API_KEY in Vercel and redeploy." }, { status: 502 });
+      }
+      if (response.status === 403) {
+        return NextResponse.json({ error: "OpenAI denied this request. Check your API project permissions and billing settings." }, { status: 502 });
+      }
+      if (response.status === 404) {
+        return NextResponse.json({ error: "The configured OpenAI model was not found or is unavailable to this API project. Check OPENAI_MODEL." }, { status: 502 });
+      }
+      if (response.status === 429) {
+        return NextResponse.json({ error: "OpenAI rate limit or quota reached. Check API usage and billing." }, { status: 502 });
+      }
+      return NextResponse.json({ error: "OpenAI could not complete the request. Check OpenAI service status and try again." }, { status: 502 });
     }
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
     const content = payload.choices?.[0]?.message?.content;
