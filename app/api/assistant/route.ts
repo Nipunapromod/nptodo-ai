@@ -100,6 +100,12 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null) as {
+        error?: { code?: string | null; type?: string | null };
+      } | null;
+      const rawCode = errorPayload?.error?.code ?? errorPayload?.error?.type ?? "";
+      const safeCode = typeof rawCode === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(rawCode) ? rawCode : "";
+
       if (response.status === 401) {
         return NextResponse.json({ error: "OpenAI rejected the API key. Check OPENAI_API_KEY in Vercel and redeploy." }, { status: 502 });
       }
@@ -110,7 +116,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "The configured OpenAI model was not found or is unavailable to this API project. Check OPENAI_MODEL." }, { status: 502 });
       }
       if (response.status === 429) {
-        return NextResponse.json({ error: "OpenAI rate limit or quota reached. Check API usage and billing." }, { status: 502 });
+        if (["insufficient_quota", "credit_balance_exhausted", "project_spend_limit_exceeded", "organization_spend_limit_exceeded", "organization_usage_limit_exceeded"].includes(safeCode)) {
+          return NextResponse.json({ error: "OpenAI reported an API quota or spending limit. Check the API project's usage and limits.", code: safeCode || "quota_limit" }, { status: 429 });
+        }
+        if (["rate_limit_exceeded", "rate_limit_error", "slow_down"].includes(safeCode)) {
+          return NextResponse.json({ error: "OpenAI is rate-limiting requests. Wait briefly before trying again.", code: safeCode }, { status: 429 });
+        }
+        return NextResponse.json({ error: "OpenAI returned HTTP 429, but the exact cause was not identified. Check the API error code in the server logs.", code: safeCode || "unknown_429" }, { status: 429 });
       }
       return NextResponse.json({ error: "OpenAI could not complete the request. Check OpenAI service status and try again." }, { status: 502 });
     }
