@@ -1,2 +1,5 @@
-import { PlaceholderPage } from "@/components/placeholder-page";
-export default function RecurringPage() { return <PlaceholderPage page="recurring" />; }
+import { RecurringClient } from "@/components/recurring-client";
+
+export default function RecurringPage() {
+  return <RecurringClient />;
+}
