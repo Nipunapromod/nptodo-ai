@@ -77,6 +77,16 @@ create table if not exists public.reminder_deliveries (
 );
 create index if not exists reminder_deliveries_pending_idx on public.reminder_deliveries (scheduled_for) where status in ('pending', 'failed');
 
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  subscription jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
 create table if not exists public.subjects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -128,6 +138,7 @@ alter table public.profiles enable row level security;
 alter table public.tasks enable row level security;
 alter table public.recurring_schedules enable row level security;
 alter table public.reminder_deliveries enable row level security;
+alter table public.push_subscriptions enable row level security;
 alter table public.subjects enable row level security;
 alter table public.lessons enable row level security;
 alter table public.study_records enable row level security;
@@ -144,6 +155,8 @@ drop policy if exists "recurring_schedules_all_own" on public.recurring_schedule
 create policy "recurring_schedules_all_own" on public.recurring_schedules for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 drop policy if exists "reminder_deliveries_select_own" on public.reminder_deliveries;
 create policy "reminder_deliveries_select_own" on public.reminder_deliveries for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "push_subscriptions_all_own" on public.push_subscriptions;
+create policy "push_subscriptions_all_own" on public.push_subscriptions for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 drop policy if exists "subjects_all_own" on public.subjects;
 create policy "subjects_all_own" on public.subjects for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 drop policy if exists "lessons_all_own" on public.lessons;
@@ -169,6 +182,7 @@ grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.tasks to authenticated;
 grant select, insert, update, delete on public.recurring_schedules to authenticated;
 grant select on public.reminder_deliveries to authenticated;
+grant select, insert, update, delete on public.push_subscriptions to authenticated;
 grant select, insert, update, delete on public.subjects to authenticated;
 grant select, insert, update, delete on public.lessons to authenticated;
 grant select, insert, update, delete on public.study_records to authenticated;
