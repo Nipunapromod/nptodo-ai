@@ -1,2 +1,5 @@
-import { PlaceholderPage } from "@/components/placeholder-page";
-export default function StudyPage() { return <PlaceholderPage page="study" />; }
+import { StudyClient } from "@/components/study-client";
+
+export default function StudyPage() {
+  return <StudyClient />;
+}
